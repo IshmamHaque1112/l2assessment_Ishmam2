@@ -60,15 +60,25 @@ Support teams waste time manually reading and triaging customer messages. This t
 
 ## How It Works
 
-1. **Paste Message**: User pastes a customer support message into the text area
-2. **Analyze**: Click "Analyze Message" to process the input
-3. **Classification**: The app runs three processes in parallel:
-   - **Category Classification** (LLM): Uses Groq AI (Llama 3.3 70B) to categorize the message
-   - **Urgency Scoring** (Rule-based): Applies simple rules to determine urgency
-   - **Recommendation** (Template-based): Maps category to a recommended action
-4. **Display Results**: Shows category, urgency tag, recommended action, and AI reasoning
-5. **History**: All analyses are saved to localStorage and viewable in the History tab
+1. **Enter details**: the company receiving the message (saved for next time), the customer's name (optional), and the message.
+2. **Keyword classification**: every category (built-in and custom) has a large keyword collection. Matching ignores case and punctuation and accepts plurals and -ed/-ing forms ("rat" matches "rats", "explode" matches "exploded").
+3. **AI classification** (when a Groq key is set): Llama 3.3 70B picks from the same category list and returns JSON. It cannot invent categories, leave a message uncategorized when keywords clearly match, or outrank a safety category or lower urgency set by the keyword check. Without a key, the keyword result is used on its own.
+4. **Urgency** (Critical / High / Medium / Low) comes from the category's minimum priority plus severity terms. It no longer uses punctuation, length, or time of day.
+   - Health & Safety, Sanitation & Hygiene, and Product Safety Hazard start at **High**.
+   - Terms like "can't breathe", "asthma attack", "exploded", "fire", or "hospital" make a message **Critical**.
+5. **Emergency & safety contacts** are shown, and added to the reply, for critical messages and for health, sanitation, and product-safety reports (911, Poison Control, 988, CPSC, FDA, local health department, all editable).
+6. **Suggested reply**: addressed to the customer, signed by the company, with a help link for the category and a FAQ link. Uncategorized messages get the FAQ link only.
+7. **History & Dashboard**: all analyses are saved to localStorage.
 
+## Categories
+
+Built-in: Health & Safety · Sanitation & Hygiene · Product Safety Hazard · Product Defect / Damaged Item · Shipping & Delivery · Returns & Refunds · Billing & Payments · Account & Login · Technical Problem · Customer Service Complaint · Feature Request · Positive Feedback · General Inquiry.
+
+On the **Settings** page a business can:
+- set its company name, website (used to build placeholder help links), and FAQ link
+- create **custom categories** with their own keywords, minimum priority, internal action, reply sentence, and help link
+- add its own keywords to any built-in category and replace its placeholder link with a real one
+- edit the emergency and safety contacts
 
 ## Example Test Messages
 
@@ -99,7 +109,22 @@ I tried to update my payment method but the page keeps loading forever. Is this 
 Can I upgrade my subscription to the pro plan?
 ```
 
-### Example 6: Technical Support
+### Example 6: Health & Safety (High, or Critical with an asthma attack)
+```
+I have asthma and had a reaction to peanuts in your granola bar even though the label didn't list them.
+```
+
+### Example 7: Sanitation (High)
+```
+I saw rats running around the produce aisle at your downtown store.
+```
+
+### Example 8: Product Safety (High, or Critical if it exploded)
+```
+The battery in the speaker I bought last week swelled up and now it's too hot to touch.
+```
+
+### Example 9: Technical Support
 ```
 The dashboard won't load when I try to access it. I've tried refreshing but it keeps timing out.
 ```

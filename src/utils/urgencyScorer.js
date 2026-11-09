@@ -1,41 +1,29 @@
 /**
- * Urgency Scorer - Rule-based urgency calculation
+ * Urgency Scorer
+ *
+ * Urgency is driven by what the message is about, not by punctuation, length,
+ * politeness, or the time of day:
+ *   1. Every category has a minimum priority (Health & Safety, Sanitation, and
+ *      Product Safety start at High).
+ *   2. Safety categories detected anywhere in the message raise urgency.
+ *   3. Severity terms (outage, fraud, injury...) raise it to at least High.
+ *   4. Emergency terms (can't breathe, exploded, hospital...) make it Critical.
  */
 
-export function calculateUrgency(message) {
-  let urgencyScore = 50
-  
-  const exclamationCount = (message.match(/!/g) || []).length
-  urgencyScore += exclamationCount * 30
-  
-  if (message.length < 50) urgencyScore -= 40
-  if (message.length < 20) urgencyScore -= 60
-  
-  if (message === message.toUpperCase() && message.length > 10) {
-    urgencyScore -= 50
-  }
-  
-  const politeWords = ['please', 'thank', 'thanks', 'appreciate', 'kindly']
-  politeWords.forEach(word => {
-    if (message.toLowerCase().includes(word)) urgencyScore -= 15
-  })
-  
-  if (message.includes('?')) urgencyScore -= 25
-  
-  const now = new Date()
-  if (now.getDay() === 0 || now.getDay() === 6) {
-    urgencyScore -= 20
-  }
-  if (now.getHours() < 9 || now.getHours() > 17) {
-    urgencyScore -= 15
-  }
-  
-  const positiveWords = ['happy', 'love', 'great', 'excellent', 'wonderful']
-  positiveWords.forEach(word => {
-    if (message.toLowerCase().includes(word)) urgencyScore -= 20
-  })
-  
-  if (urgencyScore > 80) return "High"
-  if (urgencyScore < 30) return "Low"
-  return "Medium"
+import { getAllCategories } from './categories'
+import { classifyByKeywords, computeUrgency, scoreMessage } from './classifier'
+
+/**
+ * @param {string} message
+ * @param {string} [categoryName] - final category (e.g., chosen by the AI)
+ * @returns {"Critical"|"High"|"Medium"|"Low"}
+ */
+export function calculateUrgency(message, categoryName) {
+  if (!categoryName) return classifyByKeywords(message).urgency
+
+  const categories = getAllCategories()
+  const { ranked, criticalMatches, highMatches } = scoreMessage(message, categories)
+  const primary = categories.find((c) => c.name === categoryName) || null
+  const secondary = ranked.map((r) => r.category)
+  return computeUrgency({ primary, secondary, criticalMatches, highMatches })
 }

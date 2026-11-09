@@ -8,7 +8,7 @@ function DashboardPage() {
     avgPerDay: 0
   })
   const [categoryData, setCategoryData] = useState([])
-  const [urgencyData, setUrgencyData] = useState({ High: 0, Medium: 0, Low: 0 })
+  const [urgencyData, setUrgencyData] = useState({ Critical: 0, High: 0, Medium: 0, Low: 0 })
 
   useEffect(() => {
     loadDashboardData()
@@ -22,8 +22,9 @@ function DashboardPage() {
     )
 
     // Calculate stats
-    const highUrgency = history.filter(h => h.urgency === 'High').length
-    const totalDays = history.length > 0 ? 7 : 1
+    const highUrgency = history.filter(h => h.urgency === 'High' || h.urgency === 'Critical').length
+    const days = new Set(history.map(h => new Date(h.timestamp).toDateString()))
+    const totalDays = Math.max(1, days.size)
     
     setStats({
       total: history.length,
@@ -40,7 +41,7 @@ function DashboardPage() {
     setCategoryData(Object.entries(categories).map(([name, count]) => ({ name, count })))
 
     // Urgency breakdown
-    const urgency = { High: 0, Medium: 0, Low: 0 }
+    const urgency = { Critical: 0, High: 0, Medium: 0, Low: 0 }
     history.forEach(item => {
       urgency[item.urgency] = (urgency[item.urgency] || 0) + 1
     })
@@ -66,7 +67,7 @@ function DashboardPage() {
             <div className="text-3xl font-bold text-green-600">{stats.today}</div>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-sm text-gray-600 mb-1">High Urgency</div>
+            <div className="text-sm text-gray-600 mb-1">High + Critical</div>
             <div className="text-3xl font-bold text-red-600">{stats.highUrgencyPercent}%</div>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
@@ -113,6 +114,13 @@ function DashboardPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
+                    <div className="w-4 h-4 bg-red-800 rounded mr-2"></div>
+                    <span className="text-gray-700">Critical</span>
+                  </div>
+                  <span className="text-2xl font-bold text-red-800">{urgencyData.Critical}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
                     <div className="w-4 h-4 bg-red-500 rounded mr-2"></div>
                     <span className="text-gray-700">High</span>
                   </div>
@@ -146,6 +154,9 @@ function DashboardPage() {
             )}
             {stats.today > 10 && (
               <p>📈 High activity today with {stats.today} messages analyzed</p>
+            )}
+            {urgencyData.Critical > 0 && (
+              <p>🚨 {urgencyData.Critical} critical message{urgencyData.Critical === 1 ? '' : 's'} flagged - confirm each customer received emergency contacts</p>
             )}
             {stats.total === 0 && (
               <p>👋 Start by analyzing some messages to see insights here</p>

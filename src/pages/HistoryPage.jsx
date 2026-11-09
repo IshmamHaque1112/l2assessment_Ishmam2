@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { urgencyBadgeClass } from '../utils/ui'
 
 function HistoryPage() {
   const [history, setHistory] = useState([])
@@ -22,8 +23,9 @@ function HistoryPage() {
     }
   }
 
-  const sortedHistory = [...history].sort((a, b) => 
-    a.message.localeCompare(b.message)
+  // Newest first
+  const sortedHistory = [...history].sort((a, b) =>
+    new Date(b.timestamp) - new Date(a.timestamp)
   )
   
   const filteredHistory = filter === 'all' 
@@ -117,14 +119,13 @@ function HistoryPage() {
                       "{item.message.substring(0, 100)}{item.message.length > 100 ? '...' : ''}"
                     </div>
                     <div className="flex items-center space-x-2">
+                      {item.companyName && (
+                        <span className="text-xs text-gray-500">{item.companyName}{item.customerName ? ` · ${item.customerName}` : ''}</span>
+                      )}
                       <span className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-semibold">
                         {item.category}
                       </span>
-                      <span className={`text-xs px-3 py-1 rounded-full font-semibold ${
-                        item.urgency === 'High' ? 'bg-red-200 text-red-900' :
-                        item.urgency === 'Medium' ? 'bg-yellow-200 text-yellow-900' :
-                        'bg-green-200 text-green-900'
-                      }`}>
+                      <span className={`text-xs px-3 py-1 rounded-full font-semibold ${urgencyBadgeClass(item.urgency)}`}>
                         {item.urgency} Urgency
                       </span>
                     </div>
@@ -150,8 +151,16 @@ function HistoryPage() {
                         {item.recommendedAction}
                       </div>
                     </div>
+                    {item.suggestedReply && (
+                      <div>
+                        <div className="text-xs font-semibold text-gray-600 mb-1">Suggested Reply</div>
+                        <div className="text-sm text-gray-800 bg-white p-3 rounded border border-gray-200 whitespace-pre-wrap">
+                          {item.suggestedReply}
+                        </div>
+                      </div>
+                    )}
                     <div>
-                      <div className="text-xs font-semibold text-gray-600 mb-1">AI Reasoning</div>
+                      <div className="text-xs font-semibold text-gray-600 mb-1">Reasoning</div>
                       <div className="bg-white p-3 rounded border border-gray-200">
                         <div className="prose prose-sm max-w-none text-gray-700">
                           <ReactMarkdown>

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { urgencyBadgeClass } from '../utils/ui'
 
 function HomePage() {
   const [stats, setStats] = useState({ total: 0, today: 0 })
@@ -78,7 +79,11 @@ function HomePage() {
               const examples = [
                 "Our payment failed and we can't access our account",
                 "The dashboard is loading very slowly",
-                "Can you add a dark mode feature?"
+                "Can you add a dark mode feature?",
+                "I have asthma and had a reaction to peanuts in your granola bar even though the label didn't list them.",
+                "I saw rats running around the produce aisle at your downtown store.",
+                "The battery in the speaker I bought last week swelled up and now it's too hot to touch.",
+                "My package says delivered but it never arrived."
               ]
               const random = examples[Math.floor(Math.random() * examples.length)]
               localStorage.setItem('exampleMessage', random)
@@ -111,11 +116,7 @@ function HomePage() {
                         <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                           {item.category}
                         </span>
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          item.urgency === 'High' ? 'bg-red-100 text-red-800' :
-                          item.urgency === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-green-100 text-green-800'
-                        }`}>
+                        <span className={`text-xs px-2 py-1 rounded ${urgencyBadgeClass(item.urgency)}`}>
                           {item.urgency}
                         </span>
                       </div>

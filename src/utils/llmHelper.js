@@ -1,165 +1,150 @@
-import Groq from 'groq-sdk';
+import Groq from 'groq-sdk'
+import { UNCATEGORIZED, PRIORITY_ORDER, getAllCategories, maxPriority, priorityRank } from './categories'
+import { classifyByKeywords, computeUrgency, scoreMessage } from './classifier'
 
 /**
- * LLM Helper for categorizing customer support messages
- * Using Groq API for AI-powered categorization
+ * Message analysis: keyword classifier + Groq AI.
+ *
+ * The keyword classifier always runs. If a Groq API key is configured, the AI
+ * picks from the same category list (it cannot invent categories), and the two
+ * are combined so that safety categories and severity terms are never
+ * downgraded by the AI. Without a key, or if the API call fails, the keyword
+ * result is used on its own.
  */
 
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: import.meta.env.VITE_GROQ_API_KEY,
-  dangerouslyAllowBrowser: true // Required for browser-based calls (not recommended for production!)
-});
-
-/**
- * Categorize a customer support message using Groq AI
- * 
- * @param {string} message - The customer support message
- * @returns {Promise<{category: string, reasoning: string}>}
- */
-export async function categorizeMessage(message) {
-  try {
-    const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        {
-          role: "user",
-          content: `Categorize this customer support message: ${message}`
-        }
-      ],
-      temperature: 0.7,
-    });
-
-    const content = response.choices[0].message.content;
-    
-    const lines = content.split('\n');
-    let category = "Unknown";
-    let reasoning = content;
-    
-    if (content.toLowerCase().includes('billing')) {
-      category = "Billing Issue";
-    } else if (content.toLowerCase().includes('technical') || content.toLowerCase().includes('bug')) {
-      category = "Technical Problem";
-    } else if (content.toLowerCase().includes('feature')) {
-      category = "Feature Request";
-    } else if (content.toLowerCase().includes('inquiry') || content.toLowerCase().includes('question')) {
-      category = "General Inquiry";
-    }
-    
-    return {
-      category,
-      reasoning: content
-    };
-  } catch (error) {
-    console.warn('Groq API failed, using mock response:', error.message);
-    return getMockCategorization(message);
+let groqClient = null
+function getClient() {
+  const apiKey = import.meta.env?.VITE_GROQ_API_KEY
+  if (!apiKey || apiKey.includes('your-actual-key') || apiKey.includes('your_')) return null
+  if (!groqClient) {
+    groqClient = new Groq({
+      apiKey,
+      dangerouslyAllowBrowser: true, // Browser-based calls: local development only!
+    })
   }
+  return groqClient
+}
+
+function buildPrompt(message, categories, keywordResult) {
+  const list = categories
+    .map(
+      (c) =>
+        `- "${c.name}" (minimum priority: ${c.priority})${c.description ? `: ${c.description}` : ''}` +
+        `\n  example keywords: ${c.keywords.slice(0, 25).join(', ')}`
+    )
+    .join('\n')
+
+  const hints = keywordResult.allMatches.length
+    ? keywordResult.allMatches.map((m) => `${m.category}: ${m.keywords.join(', ')}`).join('\n')
+    : 'none'
+
+  return `You are a customer support triage assistant. Classify the customer message into ONE primary category from this list (use the exact name), plus any secondary categories that also apply.
+
+Categories:
+${list}
+
+Rules:
+- Health, injury, allergy, illness, or breathing problems -> "Health & Safety".
+- Pests, dirt, mold, or unsanitary conditions -> "Sanitation & Hygiene".
+- Dangerous products (battery swelling/leaking/exploding, overheating, fire, smoke, sparks, shock) -> "Product Safety Hazard".
+- When a safety category applies alongside another (e.g., billing), the safety category is primary.
+- Choose the closest fitting category whenever reasonably possible. Use "${UNCATEGORIZED}" only if the message truly fits none of them.
+- Severity: "Critical" if someone may be in danger now or was seriously harmed (trouble breathing, hospital, fire/explosion, poisoning, self-harm); "High" for safety/health/sanitation issues, outages, fraud, or security problems; otherwise "Medium" or "Low".
+
+Keyword matches found by the rule-based system (hints, may be incomplete):
+${hints}
+
+Respond with JSON only, in this exact shape:
+{"category": "<exact category name>", "secondary_categories": ["<exact name>"], "severity": "Low|Medium|High|Critical", "reasoning": "<2-3 sentences explaining the category and severity>"}
+
+Customer message:
+"""${message}"""`
+}
+
+const describeKeywordResult = (kw) => {
+  if (!kw.categoryId) {
+    return 'No category keywords were found in this message, so it could not be categorized automatically. It has been routed to manual review with the FAQ link. Consider adding keywords or a custom category on the Settings page.'
+  }
+  const parts = [
+    `Categorized as **${kw.category}** based on these keywords: ${kw.matchedKeywords.map((k) => `"${k}"`).join(', ')}.`,
+  ]
+  if (kw.secondaryCategories.length) parts.push(`Also related to: ${kw.secondaryCategories.join(', ')}.`)
+  if (kw.criticalMatches.length) {
+    parts.push(`Marked **Critical** because the message mentions: ${kw.criticalMatches.map((k) => `"${k}"`).join(', ')}.`)
+  } else if (kw.highMatches.length) {
+    parts.push(`Raised to at least **High** because the message mentions: ${kw.highMatches.map((k) => `"${k}"`).join(', ')}.`)
+  }
+  return parts.join(' ')
 }
 
 /**
- * Mock categorization for when API is unavailable
+ * Analyze a message.
+ * @returns {Promise<{category, categoryId, secondaryCategories, matchedKeywords, criticalMatches, highMatches, urgency, reasoning, source}>}
  */
-function getMockCategorization(message) {
-  const lowerMessage = message.toLowerCase();
-  
-  // Array of possible reasoning variations for each category
-  const reasoningVariations = {
-    billing: [
-      "Based on keywords related to payments and billing, this appears to be a billing-related inquiry. The customer may need assistance with account charges or payment issues.",
-      "This message contains billing terminology. The customer is likely experiencing issues with payments, invoices, or account charges.",
-      "The message references financial matters related to the customer's account. This suggests a billing or payment concern that requires attention.",
-    ],
-    technical: [
-      "This message describes technical difficulties or system errors. The customer is reporting functionality issues that may require engineering review.",
-      "Based on error-related keywords, this appears to be a technical support issue. The customer is experiencing problems with product functionality.",
-      "The message indicates a technical problem or bug. This requires investigation from the technical support team.",
-      "System-related issues are mentioned in this message. The customer needs technical assistance to resolve functionality problems.",
-    ],
-    feature: [
-      "This message suggests improvements or new functionality. The customer is providing product feedback and feature suggestions.",
-      "The customer is requesting enhancements to the product. This appears to be a feature request that should be reviewed by the product team.",
-      "Based on the language used, this seems to be a suggestion for product improvements rather than a support issue.",
-    ],
-    inquiry: [
-      "This appears to be a general question about the product or service. The customer is seeking information or clarification.",
-      "The message contains questions that don't indicate a specific problem. This is likely a general inquiry requiring informational support.",
-      "Based on the question format, this seems to be an information request rather than a technical or billing issue.",
-    ],
-    positive: [
-      "This message contains positive sentiment and appreciation. While not a support request, it may warrant acknowledgment.",
-      "The customer is expressing satisfaction or gratitude. This doesn't appear to require immediate support action.",
-    ],
-    ambiguous: [
-      "The message content is unclear or doesn't match standard support categories. Manual review may be needed for proper categorization.",
-      "This message doesn't contain clear indicators for automatic categorization. Human review recommended.",
-    ]
-  };
-  
-  // Helper to get random reasoning
-  const getRandomReasoning = (category) => {
-    const reasons = reasoningVariations[category];
-    return reasons[Math.floor(Math.random() * reasons.length)];
-  };
-  
-  // Billing-related detection
-  if (lowerMessage.includes('bill') || lowerMessage.includes('payment') || 
-      lowerMessage.includes('charge') || lowerMessage.includes('invoice') ||
-      lowerMessage.includes('credit card') || lowerMessage.includes('subscription') ||
-      lowerMessage.includes('refund') || lowerMessage.includes('cancel') && lowerMessage.includes('account')) {
+export async function analyzeMessage(message) {
+  const categories = getAllCategories()
+  const kw = classifyByKeywords(message, categories)
+  const keywordOnly = { ...kw, reasoning: describeKeywordResult(kw), source: 'keywords' }
+
+  const client = getClient()
+  if (!client) return keywordOnly
+
+  try {
+    const response = await client.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: buildPrompt(message, categories, kw) }],
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+    })
+
+    const parsed = JSON.parse(response.choices[0].message.content)
+    const byName = (name) =>
+      categories.find((c) => c.name.toLowerCase() === String(name || '').trim().toLowerCase()) || null
+
+    let primary = byName(parsed.category)
+    const kwPrimary = categories.find((c) => c.id === kw.categoryId) || null
+
+    // The AI cannot leave a message uncategorized when keywords clearly match,
+    // and cannot outrank a safety category the keywords found.
+    if (!primary && kwPrimary) primary = kwPrimary
+    if (primary && kwPrimary && kwPrimary.safety && priorityRank(kwPrimary.priority) > priorityRank(primary.priority)) {
+      primary = kwPrimary
+    }
+
+    const { ranked } = scoreMessage(message, categories)
+    const secondaryObjs = [
+      ...(parsed.secondary_categories || []).map(byName),
+      ...ranked.map((r) => r.category),
+    ].filter((c) => c && (!primary || c.id !== primary.id))
+    const secondary = [...new Map(secondaryObjs.map((c) => [c.id, c])).values()]
+
+    const aiSeverity = PRIORITY_ORDER.includes(parsed.severity) ? parsed.severity : 'Low'
+    const urgency = maxPriority(
+      computeUrgency({ primary, secondary, criticalMatches: kw.criticalMatches, highMatches: kw.highMatches }),
+      aiSeverity
+    )
+
+    const reasoning = [parsed.reasoning, kw.matchedKeywords.length || kw.criticalMatches.length ? `\n\n_Keyword check:_ ${describeKeywordResult(kw)}` : '']
+      .filter(Boolean)
+      .join('')
+
     return {
-      category: "Billing Issue",
-      reasoning: getRandomReasoning('billing')
-    };
+      ...kw,
+      category: primary ? primary.name : UNCATEGORIZED,
+      categoryId: primary ? primary.id : null,
+      secondaryCategories: secondary.slice(0, 3).map((c) => c.name),
+      urgency,
+      reasoning: reasoning || describeKeywordResult(kw),
+      source: 'ai',
+    }
+  } catch (error) {
+    console.warn('Groq API failed, using keyword classification:', error.message)
+    return { ...keywordOnly, reasoning: `${keywordOnly.reasoning}\n\n_(AI unavailable: ${error.message})_` }
   }
-  
-  // Technical problem detection
-  if (lowerMessage.includes('bug') || lowerMessage.includes('error') || 
-      lowerMessage.includes('broken') || lowerMessage.includes('not working') ||
-      lowerMessage.includes('crash') || lowerMessage.includes('down') || 
-      lowerMessage.includes('server') || lowerMessage.includes('loading') ||
-      lowerMessage.includes('slow') || lowerMessage.includes('issue') ||
-      lowerMessage.includes('problem') && !lowerMessage.includes('no problem')) {
-    return {
-      category: "Technical Problem",
-      reasoning: getRandomReasoning('technical')
-    };
-  }
-  
-  // Feature request detection
-  if (lowerMessage.includes('feature') || lowerMessage.includes('add') && (lowerMessage.includes('please') || lowerMessage.includes('could')) ||
-      lowerMessage.includes('improve') || lowerMessage.includes('would like to see') ||
-      lowerMessage.includes('suggestion') || lowerMessage.includes('wish') ||
-      lowerMessage.includes('could you') && lowerMessage.includes('add') ||
-      lowerMessage.includes('enhancement') || lowerMessage.includes('would be great')) {
-    return {
-      category: "Feature Request",
-      reasoning: getRandomReasoning('feature')
-    };
-  }
-  
-  // Positive feedback detection
-  if ((lowerMessage.includes('thank') || lowerMessage.includes('thanks') || lowerMessage.includes('appreciate')) &&
-      !lowerMessage.includes('but') && !lowerMessage.includes('however')) {
-    return {
-      category: "General Inquiry",
-      reasoning: getRandomReasoning('positive')
-    };
-  }
-  
-  // Question/inquiry detection
-  if (lowerMessage.includes('how') || lowerMessage.includes('what') || 
-      lowerMessage.includes('when') || lowerMessage.includes('where') ||
-      lowerMessage.includes('can i') || lowerMessage.includes('is there') ||
-      lowerMessage.includes('?')) {
-    return {
-      category: "General Inquiry",
-      reasoning: getRandomReasoning('inquiry')
-    };
-  }
-  
-  // Fallback for ambiguous messages
-  return {
-    category: "General Inquiry",
-    reasoning: getRandomReasoning('ambiguous')
-  };
+}
+
+/** Backwards-compatible helper. */
+export async function categorizeMessage(message) {
+  const { category, reasoning } = await analyzeMessage(message)
+  return { category, reasoning }
 }

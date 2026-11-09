@@ -64,6 +64,16 @@ function Navigation() {
             >
               Dashboard
             </Link>
+            <Link
+              to="/settings"
+              className={`px-4 py-2 rounded ${
+                isActive('/settings') 
+                  ? 'bg-blue-700 font-semibold' 
+                  : 'hover:bg-blue-500'
+              }`}
+            >
+              Settings
+            </Link>
           </div>
         </div>
       </div>
