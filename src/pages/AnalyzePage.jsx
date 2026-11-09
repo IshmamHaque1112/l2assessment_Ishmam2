@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import { analyzeMessage } from '../utils/llmHelper'
+import { analyzeMessage, generateAiReply } from '../utils/llmHelper'
+import { findRelevantArticles, hasWiki } from '../utils/wiki'
 import { selectContacts } from '../utils/classifier'
 import {
   getAllCategories,
   getActiveBusinessId,
+  getBusiness,
   getBusinesses,
   getSettings,
   setActiveBusinessId,
   UNCATEGORIZED,
 } from '../utils/categories'
-import { getRecommendedAction, buildSuggestedReply, getReplyLinks, shouldEscalate } from '../utils/templates'
+import { getRecommendedAction, buildSuggestedReply, enforceReplyRequirements, getReplyLinks, shouldEscalate } from '../utils/templates'
 import { urgencyBadgeClass } from '../utils/ui'
 
 /** Render text with clickable URLs */
@@ -49,6 +51,8 @@ function AnalyzePage() {
 
   const business = businesses.find((b) => b.id === businessId) || businesses[0]
   const categoryCount = getAllCategories(business.id).length
+  const wikiReady = hasWiki(business)
+  const wikiCount = (business.wiki || []).length
 
   const handleBusinessChange = (id) => {
     setBusinessId(id)
@@ -57,6 +61,10 @@ function AnalyzePage() {
   }
 
   const handleAnalyze = async () => {
+    if (!wikiReady) {
+      setError(`${business.companyName} needs a wiki before messages can be analyzed. Add articles on the Businesses page.`)
+      return
+    }
     if (message.trim().length < 2) {
       setError('Please enter a customer message to analyze.')
       return
@@ -84,6 +92,33 @@ function AnalyzePage() {
       })
 
       const { categoryLink, faqLink } = getReplyLinks(analysis.category, settings)
+      const fullBusiness = getBusiness(business.id)
+      const relevant = findRelevantArticles(message, fullBusiness, categoryIds)
+      const articles = relevant.map((r) => r.article)
+
+      const templateReply = buildSuggestedReply({
+        categoryName: analysis.category,
+        urgency: analysis.urgency,
+        customerName,
+        companyName,
+        contacts,
+        articles,
+        signature: fullBusiness.agent.signature,
+        settings,
+      })
+      const aiReply = await generateAiReply({
+        message,
+        business: fullBusiness,
+        analysis,
+        customerName,
+        contacts,
+        categoryLink,
+        faqLink,
+        articles,
+      })
+      const checked = aiReply
+        ? enforceReplyRequirements(aiReply, { companyName, urgency: analysis.urgency, contacts, categoryLink, faqLink, categoryName: analysis.category })
+        : null
 
       const analysisResult = {
         message,
@@ -102,14 +137,10 @@ function AnalyzePage() {
         contacts,
         categoryLink,
         faqLink,
-        suggestedReply: buildSuggestedReply({
-          categoryName: analysis.category,
-          urgency: analysis.urgency,
-          customerName,
-          companyName,
-          contacts,
-          settings,
-        }),
+        suggestedReply: checked ? checked.reply : templateReply,
+        replySource: checked ? 'ai' : 'template',
+        replyChecksAdded: checked ? checked.added : [],
+        wikiArticles: relevant.map((r) => ({ title: r.article.title, content: r.article.content, url: r.article.url, reasons: r.reasons })),
         timestamp: new Date().toISOString(),
       }
 
@@ -170,7 +201,7 @@ function AnalyzePage() {
                 ))}
               </select>
               <div className="text-xs text-gray-500 mt-1">
-                Uses {categoryCount} categories ·{' '}
+                Uses {categoryCount} categories · {wikiCount} wiki article{wikiCount === 1 ? '' : 's'} ·{' '}
                 <Link to="/businesses" className="text-blue-600 hover:underline">
                   Add or edit businesses
                 </Link>
@@ -190,6 +221,17 @@ function AnalyzePage() {
               />
             </div>
           </div>
+
+          {!wikiReady && (
+            <div className="mb-4 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg p-4 text-sm">
+              <div className="font-semibold mb-1">{business.companyName} doesn't have a wiki yet</div>
+              Every business needs a wiki (policies, FAQs, procedures) so replies are based on its real information.{' '}
+              <Link to="/businesses" className="text-blue-700 underline font-semibold">
+                Type articles or upload a file
+              </Link>{' '}
+              to start analyzing messages for {business.companyName}.
+            </div>
+          )}
 
           {/* Message */}
           <div className="mb-4">
@@ -214,9 +256,9 @@ function AnalyzePage() {
           <div className="flex space-x-3">
             <button
               onClick={handleAnalyze}
-              disabled={isLoading}
+              disabled={isLoading || !wikiReady}
               className={`flex-1 py-3 rounded-lg font-semibold ${
-                isLoading ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+                isLoading || !wikiReady ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
             >
               {isLoading ? 'Analyzing...' : 'Analyze Message'}
@@ -331,6 +373,27 @@ function AnalyzePage() {
                 </div>
 
                 <div>
+                  <div className="text-sm font-semibold text-gray-600 mb-1">Wiki Articles Used</div>
+                  {results.wikiArticles?.length ? (
+                    <div className="space-y-2">
+                      {results.wikiArticles.map((a) => (
+                        <details key={a.title} className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-emerald-900">
+                            {a.title} <span className="font-normal text-xs text-emerald-700">({a.reasons.join('; ')})</span>
+                          </summary>
+                          <div className="text-sm text-gray-700 whitespace-pre-wrap mt-2">{a.content}</div>
+                          {a.url && <div className="text-xs mt-2"><Linkified text={a.url} /></div>}
+                        </details>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-600">
+                      No wiki article matched this message. Consider adding one for {results.companyName}.
+                    </div>
+                  )}
+                </div>
+
+                <div>
                   <div className="text-sm font-semibold text-gray-600 mb-1">Reasoning</div>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <div className="prose prose-sm max-w-none text-gray-700">
@@ -344,7 +407,15 @@ function AnalyzePage() {
             {/* Suggested reply */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xl font-bold text-gray-900">Suggested Reply</h2>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Suggested Reply</h2>
+                  <div className="text-xs text-gray-500">
+                    {results.replySource === 'ai'
+                      ? `Written by AI using ${results.companyName}'s instructions and wiki`
+                      : 'Template reply (AI unavailable or turned off for this business)'}
+                    {results.replyChecksAdded?.length > 0 && ` · Safety check added: ${results.replyChecksAdded.join(', ')}`}
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => copy('reply', results.suggestedReply)}

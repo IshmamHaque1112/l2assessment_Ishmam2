@@ -148,3 +148,71 @@ export async function categorizeMessage(message) {
   const { category, reasoning } = await analyzeMessage(message)
   return { category, reasoning }
 }
+
+/**
+ * Write a customer reply with the AI, following the business's instructions
+ * and drawing on its wiki. Returns null when the AI is unavailable, so the
+ * caller can fall back to the template reply. Required content (company name,
+ * links, safety contacts) is enforced afterwards by enforceReplyRequirements.
+ */
+export async function generateAiReply({ message, business, analysis, customerName, contacts = [], categoryLink, faqLink, articles = [] }) {
+  const client = getClient()
+  if (!client || business?.agent?.useAiReplies === false) return null
+
+  const agent = business.agent || {}
+  const wiki = articles.length
+    ? articles
+        .map((a, i) => `[Article ${i + 1}] ${a.title}${a.url ? ` (${a.url})` : ''}\n${a.content.slice(0, 1800)}`)
+        .join('\n\n')
+    : '(No wiki articles matched this message. Do not invent policies, prices, timelines, or promises.)'
+
+  const required = [
+    `Greet the customer as "${(customerName || '').trim() || 'there'}".`,
+    `Write as ${business.companyName}'s support team and mention ${business.companyName} by name.`,
+    categoryLink ? `Include this help link exactly: ${categoryLink}` : 'The message was not categorized: do not invent a help link.',
+    `Include this FAQ link exactly: ${faqLink}`,
+    analysis.urgency === 'Critical'
+      ? 'This may be an emergency. Near the top, tell the customer to call 911 (or their local emergency number) if anyone is in danger or has severe symptoms.'
+      : null,
+    contacts.length ? `Include these contacts exactly as written:\n${contacts.map((c) => `- ${c.name}: ${c.contact}`).join('\n')}` : null,
+    `Sign off with: ${agent.signature?.trim() || `The ${business.companyName} Support Team`}`,
+  ].filter(Boolean)
+
+  const prompt = `You are the customer support agent for ${business.companyName}. Write a reply to the customer message below.
+
+Message details (from triage):
+- Category: ${analysis.category}${analysis.secondaryCategories?.length ? ` (also: ${analysis.secondaryCategories.join(', ')})` : ''}
+- Urgency: ${analysis.urgency}
+
+Tone: ${agent.tone || 'Warm and professional'}
+
+${business.companyName}'s instructions for replies:
+${agent.instructions?.trim() || '(none provided)'}
+
+${business.companyName}'s wiki (use these facts and policies; quote them accurately; never contradict them):
+${wiki}
+
+Required in every reply (these override the business instructions if they conflict):
+${required.map((r) => `- ${r}`).join('\n')}
+- Use only facts from the wiki or the message. If the wiki does not cover something, say the team will follow up rather than guessing.
+- Never blame the customer, never discourage seeking medical help, and never ask the customer to keep a safety issue quiet.
+- Plain text only (no markdown headings or bold). Keep it under 220 words unless the instructions ask otherwise.
+
+Customer message:
+"""${message}"""
+
+Reply:`
+
+  try {
+    const response = await client.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.4,
+    })
+    const text = response.choices[0].message.content?.trim()
+    return text || null
+  } catch (error) {
+    console.warn('Groq reply generation failed, using template reply:', error.message)
+    return null
+  }
+}

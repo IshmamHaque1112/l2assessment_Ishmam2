@@ -67,8 +67,9 @@ Support teams waste time manually reading and triaging customer messages. This t
    - Health & Safety, Sanitation & Hygiene, and Product Safety Hazard start at **High**.
    - Terms like "can't breathe", "asthma attack", "exploded", "fire", or "hospital" make a message **Critical**.
 5. **Emergency & safety contacts** are shown, and added to the reply, for critical messages and for health, sanitation, and product-safety reports (911, Poison Control, 988, CPSC, FDA, local health department, all editable).
-6. **Suggested reply**: addressed to the customer, signed by the company, with a help link for the category and a FAQ link. Uncategorized messages get the FAQ link only.
-7. **History & Dashboard**: all analyses are saved to localStorage.
+6. **Wiki lookup**: the most relevant articles from the business's wiki are found by linked category, keywords, title, and content (articles are also auto-tagged with the categories their text matches), and shown with the results.
+7. **Suggested reply**: with a Groq key, the AI writes the reply using the business's agent instructions, tone, and the matching wiki articles, using only facts from the wiki. A safety check then makes sure the reply has the company name, the emergency instruction and safety contacts when needed, the category help link, and the FAQ link, adding anything missing before the sign-off. Without a key, a template reply is used. Uncategorized messages get the FAQ link only.
+8. **History & Dashboard**: all analyses are saved to localStorage.
 
 ## Categories
 
@@ -81,6 +82,9 @@ The **Businesses** page holds a list of businesses. Each business has its own:
 - emergency and safety contacts
 - version of every **default category**: turn it on or off, change its minimum priority, **add keywords**, **turn off built-in keywords** that don't fit, and set its help link, internal action, and reply sentence
 - **custom categories** with their own keywords, priority, action, reply sentence, and help link
+
+- **wiki (required)**: policies, FAQs, procedures, and product details, typed in or uploaded as files (`.md`, `.txt`, `.csv`, `.json`, `.html`; see `sample-wiki/`). Markdown headings and CSV rows become separate articles, and long sections are split into parts. Messages can't be analyzed for a business until its wiki has at least one article.
+- **reply agent**: tone, sign-off, and free-form instructions ("offer code SORRY15 for late deliveries", "never promise delivery dates")
 
 Changes to one business never affect another. Businesses can be added, duplicated (to copy a setup), and deleted. On the Analyze page you pick which business received the message, and History and Dashboard can be filtered by business. Data from the earlier single-business version moves into the first business automatically.
 

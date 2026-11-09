@@ -16,6 +16,9 @@ import {
   updateDefaultOverride,
 } from '../utils/categories'
 import { urgencyBadgeClass } from '../utils/ui'
+import { hasWiki } from '../utils/wiki'
+import WikiEditor from '../components/WikiEditor'
+import AgentEditor from '../components/AgentEditor'
 
 const CONTACT_WHEN = {
   critical: 'Any critical message',
@@ -315,8 +318,9 @@ function BusinessesPage() {
               >
                 <div className="font-semibold text-gray-900">{b.companyName || 'Untitled business'}</div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {b.customCategories.length} custom categor{b.customCategories.length === 1 ? 'y' : 'ies'}
+                  {b.customCategories.length} custom categor{b.customCategories.length === 1 ? 'y' : 'ies'} · {(b.wiki || []).length} wiki article{(b.wiki || []).length === 1 ? '' : 's'}
                 </div>
+                {!hasWiki(b) && <div className="text-xs font-semibold text-amber-700 mt-1">⚠ Wiki required</div>}
               </button>
             ))}
           </div>
@@ -354,6 +358,22 @@ function BusinessesPage() {
             <button className="text-blue-600 hover:underline" onClick={handleDuplicate}>Duplicate this business</button>
             <button className="text-red-600 hover:underline" onClick={handleDelete}>Delete this business</button>
           </div>
+        </Section>
+
+        {/* Wiki */}
+        <Section
+          title={`${business.companyName} Wiki (required)`}
+          subtitle="Policies, FAQs, procedures, and product details. The reply agent looks up the most relevant articles for each message and writes its reply from them."
+        >
+          <WikiEditor key={`wiki-${business.id}`} business={business} onChange={refresh} />
+        </Section>
+
+        {/* Agent */}
+        <Section
+          title="Reply Agent"
+          subtitle={`Tell the agent how ${business.companyName} wants complaints handled: tone, what to offer, what to avoid.`}
+        >
+          <AgentEditor key={`agent-${business.id}`} business={business} onChange={refresh} />
         </Section>
 
         {/* Default categories */}

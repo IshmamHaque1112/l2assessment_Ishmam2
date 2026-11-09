@@ -50,10 +50,18 @@ export function findMatches(normalizedMessage, keywords) {
     const re = keywordRegex(kw)
     if (re && re.test(normalizedMessage)) hits.push(kw)
   }
-  // Drop keywords contained in a longer matched phrase ("battery" inside "swollen battery")
-  return hits.filter(
-    (kw) => !hits.some((other) => other !== kw && other.length > kw.length && normalize(other).trim().includes(normalize(kw).trim()))
-  )
+  // Drop a keyword when a longer match already covers it: a phrase containing it
+  // ("battery" inside "swollen battery") or the same word with an ending
+  // ("explode" when "exploded" matched). "deliver" and "delivery" both count.
+  const covers = (other, kw) => {
+    const o = normalize(other)
+    const k = normalize(kw)
+    if (o.includes(k)) return true
+    const ow = o.trim()
+    const kwd = k.trim()
+    return ow.startsWith(kwd) && /^(s|es|ed|d|ing)$/.test(ow.slice(kwd.length))
+  }
+  return hits.filter((kw) => !hits.some((other) => other !== kw && other.length > kw.length && covers(other, kw)))
 }
 
 const keywordWeight = (kw) => 1 + (normalize(kw).trim().split(' ').length - 1) * 0.75
@@ -71,7 +79,10 @@ export function scoreMessage(message, categories = getAllCategories()) {
       const raw = matches.reduce((sum, kw) => sum + keywordWeight(kw), 0)
       // Safety and high-priority categories win close calls, and a business's
       // own categories beat the generic built-in ones.
-      const boost = (1 + priorityRank(category.priority) * 0.15) * (category.custom ? 1.25 : 1)
+      // General Inquiry is a catch-all, so question wording ("when does", "how do i")
+      // shouldn't outweigh the actual topic of the message.
+      const boost =
+        (1 + priorityRank(category.priority) * 0.15) * (category.custom ? 1.25 : 1) * (category.id === 'general' ? 0.6 : 1)
       return { category, matches, score: +(raw * boost).toFixed(2) }
     })
     .filter((r) => r.score > 0)

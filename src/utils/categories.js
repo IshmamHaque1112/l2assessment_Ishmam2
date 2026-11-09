@@ -91,7 +91,8 @@ export const DEFAULT_CATEGORIES = [
       'Thank you for reporting this. Cleanliness and hygiene are critical to us, and we have notified the responsible manager so the issue can be inspected and addressed right away.',
     keywords: [
       // pests
-      'rat', 'mouse', 'mice', 'rodent', 'vermin', 'roach', 'cockroach', 'bug in', 'bugs in', 'insect', 'ant',
+      'rat', 'mouse', 'mice', 'rodent', 'vermin', 'roach', 'cockroach', 'bug in', 'bugs in', 'bugs on', 'bug on',
+      'crawling', 'crawl', 'live bug', 'dead bug', 'bugs everywhere', 'bugs crawling', 'insect', 'ant',
       'fly', 'flies', 'fruit fly', 'gnat', 'maggot', 'worm', 'larva', 'larvae', 'weevil', 'moth', 'bed bug',
       'bedbug', 'flea', 'lice', 'tick', 'termite', 'spider', 'pigeon', 'bird droppings', 'pest', 'infestation',
       'infested', 'droppings', 'feces', 'poop', 'urine', 'nest', 'gnawed', 'chewed',
@@ -470,7 +471,23 @@ export const slugify = (text) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'category'
 
-const newId = (prefix) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+/** How the reply agent behaves for a business (edited on the Businesses page). */
+export const DEFAULT_AGENT = {
+  tone: 'Warm and professional',
+  instructions: '',
+  signature: '',
+  useAiReplies: true,
+}
+
+export const TONE_OPTIONS = [
+  'Warm and professional',
+  'Friendly and casual',
+  'Formal and concise',
+  'Empathetic and reassuring',
+  'Upbeat and energetic',
+]
+
+export const newId = (prefix) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
 /** Fill in any missing fields on a stored business. */
 function normalizeBusiness(b) {
@@ -478,7 +495,9 @@ function normalizeBusiness(b) {
     ...DEFAULT_SETTINGS,
     customCategories: [],
     defaultOverrides: {},
+    wiki: [],
     ...b,
+    agent: { ...DEFAULT_AGENT, ...(b?.agent || {}) },
     emergencyContacts: b?.emergencyContacts || DEFAULT_EMERGENCY_CONTACTS,
   }
 }
