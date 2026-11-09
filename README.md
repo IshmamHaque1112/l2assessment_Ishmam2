@@ -60,7 +60,7 @@ Support teams waste time manually reading and triaging customer messages. This t
 
 ## How It Works
 
-1. **Enter details**: the company receiving the message (saved for next time), the customer's name (optional), and the message.
+1. **Enter details**: pick the business receiving the message, the customer's name (optional), and the message.
 2. **Keyword classification**: every category (built-in and custom) has a large keyword collection. Matching ignores case and punctuation and accepts plurals and -ed/-ing forms ("rat" matches "rats", "explode" matches "exploded").
 3. **AI classification** (when a Groq key is set): Llama 3.3 70B picks from the same category list and returns JSON. It cannot invent categories, leave a message uncategorized when keywords clearly match, or outrank a safety category or lower urgency set by the keyword check. Without a key, the keyword result is used on its own.
 4. **Urgency** (Critical / High / Medium / Low) comes from the category's minimum priority plus severity terms. It no longer uses punctuation, length, or time of day.
@@ -74,11 +74,15 @@ Support teams waste time manually reading and triaging customer messages. This t
 
 Built-in: Health & Safety · Sanitation & Hygiene · Product Safety Hazard · Product Defect / Damaged Item · Shipping & Delivery · Returns & Refunds · Billing & Payments · Account & Login · Technical Problem · Customer Service Complaint · Feature Request · Positive Feedback · General Inquiry.
 
-On the **Settings** page a business can:
-- set its company name, website (used to build placeholder help links), and FAQ link
-- create **custom categories** with their own keywords, minimum priority, internal action, reply sentence, and help link
-- add its own keywords to any built-in category and replace its placeholder link with a real one
-- edit the emergency and safety contacts
+### Businesses
+
+The **Businesses** page holds a list of businesses. Each business has its own:
+- company name, website (used to build placeholder help links), and FAQ link
+- emergency and safety contacts
+- version of every **default category**: turn it on or off, change its minimum priority, **add keywords**, **turn off built-in keywords** that don't fit, and set its help link, internal action, and reply sentence
+- **custom categories** with their own keywords, priority, action, reply sentence, and help link
+
+Changes to one business never affect another. Businesses can be added, duplicated (to copy a setup), and deleted. On the Analyze page you pick which business received the message, and History and Dashboard can be filtered by business. Data from the earlier single-business version moves into the first business automatically.
 
 ## Example Test Messages
 

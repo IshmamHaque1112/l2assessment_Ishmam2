@@ -5,6 +5,7 @@ import { urgencyBadgeClass } from '../utils/ui'
 function HistoryPage() {
   const [history, setHistory] = useState([])
   const [filter, setFilter] = useState('all')
+  const [businessFilter, setBusinessFilter] = useState('all')
   const [expandedIndex, setExpandedIndex] = useState(null)
 
   useEffect(() => {
@@ -28,11 +29,18 @@ function HistoryPage() {
     new Date(b.timestamp) - new Date(a.timestamp)
   )
   
-  const filteredHistory = filter === 'all' 
-    ? sortedHistory 
-    : sortedHistory.filter(item => item.category === filter)
+  const businessKey = (item) => item.businessId || item.companyName || 'unknown'
+  const businessOptions = [...new Map(history.map(item => [businessKey(item), item.companyName || 'Unknown business'])).entries()]
 
-  const categories = [...new Set(history.map(item => item.category))]
+  const businessHistory = businessFilter === 'all'
+    ? sortedHistory
+    : sortedHistory.filter(item => businessKey(item) === businessFilter)
+
+  const filteredHistory = filter === 'all'
+    ? businessHistory
+    : businessHistory.filter(item => item.category === filter)
+
+  const categories = [...new Set(businessHistory.map(item => item.category))]
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -53,6 +61,22 @@ function HistoryPage() {
             )}
           </div>
 
+          {/* Business filter */}
+          {businessOptions.length > 1 && (
+            <div className="mb-4">
+              <select
+                value={businessFilter}
+                onChange={(e) => { setBusinessFilter(e.target.value); setFilter('all') }}
+                className="border border-gray-300 rounded-lg p-2 text-sm bg-white"
+              >
+                <option value="all">All businesses</option>
+                {businessOptions.map(([key, name]) => (
+                  <option key={key} value={key}>{name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Filter Buttons */}
           {history.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-6">
@@ -64,7 +88,7 @@ function HistoryPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                All ({history.length})
+                All ({businessHistory.length})
               </button>
               {categories.map(category => (
                 <button
@@ -76,7 +100,7 @@ function HistoryPage() {
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  {category} ({history.filter(h => h.category === category).length})
+                  {category} ({businessHistory.filter(h => h.category === category).length})
                 </button>
               ))}
             </div>

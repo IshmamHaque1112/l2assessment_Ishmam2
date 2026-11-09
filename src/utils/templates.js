@@ -5,6 +5,7 @@
 import {
   UNCATEGORIZED,
   getAllCategories,
+  getBusiness,
   getCategoryLink,
   getSettings,
   priorityRank,
@@ -50,7 +51,7 @@ export function shouldEscalate(categoryName, urgency) {
 export function getReplyLinks(categoryName, settings = getSettings()) {
   const category = categoryName && categoryName !== UNCATEGORIZED ? findCategory(categoryName) : null
   return {
-    categoryLink: category ? getCategoryLink(category, settings) : null,
+    categoryLink: category ? getCategoryLink(category, getBusiness(settings.id)) : null,
     categoryLabel: category ? category.name : null,
     faqLink: settings.faqLink || `${(settings.websiteUrl || '').replace(/\/+$/, '')}/faq`,
   }

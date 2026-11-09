@@ -56,7 +56,7 @@ export function findMatches(normalizedMessage, keywords) {
   )
 }
 
-const keywordWeight = (kw) => 1 + (kw.trim().split(/\s+/).length - 1) * 0.75
+const keywordWeight = (kw) => 1 + (normalize(kw).trim().split(' ').length - 1) * 0.75
 
 /**
  * Score all categories.
@@ -69,8 +69,9 @@ export function scoreMessage(message, categories = getAllCategories()) {
     .map((category) => {
       const matches = findMatches(text, category.keywords)
       const raw = matches.reduce((sum, kw) => sum + keywordWeight(kw), 0)
-      // Safety and high-priority categories win close calls.
-      const boost = 1 + priorityRank(category.priority) * 0.15
+      // Safety and high-priority categories win close calls, and a business's
+      // own categories beat the generic built-in ones.
+      const boost = (1 + priorityRank(category.priority) * 0.15) * (category.custom ? 1.25 : 1)
       return { category, matches, score: +(raw * boost).toFixed(2) }
     })
     .filter((r) => r.score > 0)

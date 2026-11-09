@@ -4,7 +4,7 @@ import HomePage from './pages/HomePage'
 import AnalyzePage from './pages/AnalyzePage'
 import HistoryPage from './pages/HistoryPage'
 import DashboardPage from './pages/DashboardPage'
-import SettingsPage from './pages/SettingsPage'
+import BusinessesPage from './pages/BusinessesPage'
 
 function App() {
   return (
@@ -16,7 +16,8 @@ function App() {
           <Route path="/analyze" element={<AnalyzePage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/businesses" element={<BusinessesPage />} />
+          <Route path="/settings" element={<BusinessesPage />} />
         </Routes>
       </div>
     </Router>

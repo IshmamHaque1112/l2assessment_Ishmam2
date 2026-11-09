@@ -422,13 +422,23 @@ export const DEFAULT_EMERGENCY_CONTACTS = [
 ]
 
 /* ----------------------------------------------------------------------------
- * Settings & custom categories (localStorage)
+ * Businesses (localStorage)
+ *
+ * Each business has its own details, emergency contacts, custom categories,
+ * and its own version of every default category:
+ *   defaultOverrides[categoryId] = {
+ *     enabled,          // false hides the category for this business
+ *     priority,         // minimum priority override
+ *     addedKeywords,    // extra keywords
+ *     removedKeywords,  // built-in keywords this business turned off
+ *     link,             // real help link instead of the placeholder
+ *     action,           // internal next step override
+ *     replyLine,        // customer reply sentence override
+ *   }
  * ------------------------------------------------------------------------- */
 
-const SETTINGS_KEY = 'relaySettings'
-const CUSTOM_CATEGORIES_KEY = 'relayCustomCategories'
-const KEYWORD_ADDITIONS_KEY = 'relayKeywordAdditions'
-const LINK_OVERRIDES_KEY = 'relayLinkOverrides'
+const BUSINESSES_KEY = 'relayBusinesses'
+const ACTIVE_BUSINESS_KEY = 'relayActiveBusinessId'
 
 export const DEFAULT_SETTINGS = {
   companyName: 'Your Company',
@@ -454,36 +464,142 @@ const writeJSON = (key, value) => {
   }
 }
 
-export function getSettings() {
-  return { ...DEFAULT_SETTINGS, ...readJSON(SETTINGS_KEY, {}) }
+export const slugify = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'category'
+
+const newId = (prefix) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+/** Fill in any missing fields on a stored business. */
+function normalizeBusiness(b) {
+  return {
+    ...DEFAULT_SETTINGS,
+    customCategories: [],
+    defaultOverrides: {},
+    ...b,
+    emergencyContacts: b?.emergencyContacts || DEFAULT_EMERGENCY_CONTACTS,
+  }
 }
 
-export function saveSettings(settings) {
-  writeJSON(SETTINGS_KEY, settings)
+export function makeBusiness(companyName = 'New Business') {
+  const slug = slugify(companyName)
+  return normalizeBusiness({
+    id: newId('biz'),
+    companyName,
+    websiteUrl: `https://www.${slug.replace(/-/g, '')}.com`,
+    faqLink: `https://www.${slug.replace(/-/g, '')}.com/faq`,
+    emergencyContacts: DEFAULT_EMERGENCY_CONTACTS.map((c) => ({ ...c })),
+  })
 }
 
-export function getCustomCategories() {
-  return readJSON(CUSTOM_CATEGORIES_KEY, [])
+/** Move data saved by the earlier single-business version into the first business. */
+function migrateLegacy() {
+  const legacySettings = readJSON('relaySettings', null)
+  const legacyCustom = readJSON('relayCustomCategories', null)
+  const legacyAdditions = readJSON('relayKeywordAdditions', null)
+  const legacyLinks = readJSON('relayLinkOverrides', null)
+  const business = makeBusiness(legacySettings?.companyName || DEFAULT_SETTINGS.companyName)
+  if (legacySettings) Object.assign(business, legacySettings)
+  if (legacyCustom) business.customCategories = legacyCustom
+  const ids = new Set([...Object.keys(legacyAdditions || {}), ...Object.keys(legacyLinks || {})])
+  ids.forEach((id) => {
+    business.defaultOverrides[id] = {
+      ...(legacyAdditions?.[id]?.length ? { addedKeywords: legacyAdditions[id] } : {}),
+      ...(legacyLinks?.[id] ? { link: legacyLinks[id] } : {}),
+    }
+  })
+  return business
 }
 
-export function saveCustomCategories(categories) {
-  writeJSON(CUSTOM_CATEGORIES_KEY, categories)
+export function getBusinesses() {
+  let list = readJSON(BUSINESSES_KEY, null)
+  if (!Array.isArray(list) || list.length === 0) {
+    list = [migrateLegacy()]
+    writeJSON(BUSINESSES_KEY, list)
+  }
+  return list.map(normalizeBusiness)
 }
 
-export function getKeywordAdditions() {
-  return readJSON(KEYWORD_ADDITIONS_KEY, {})
+export function saveBusinesses(list) {
+  writeJSON(BUSINESSES_KEY, list)
 }
 
-export function saveKeywordAdditions(additions) {
-  writeJSON(KEYWORD_ADDITIONS_KEY, additions)
+export function getActiveBusinessId() {
+  const list = getBusinesses()
+  const id = readJSON(ACTIVE_BUSINESS_KEY, null)
+  return list.some((b) => b.id === id) ? id : list[0].id
 }
 
-export function getLinkOverrides() {
-  return readJSON(LINK_OVERRIDES_KEY, {})
+export function setActiveBusinessId(id) {
+  writeJSON(ACTIVE_BUSINESS_KEY, id)
 }
 
-export function saveLinkOverrides(overrides) {
-  writeJSON(LINK_OVERRIDES_KEY, overrides)
+export function getBusiness(id = getActiveBusinessId()) {
+  const list = getBusinesses()
+  return list.find((b) => b.id === id) || list[0]
+}
+
+export const getActiveBusiness = () => getBusiness()
+
+export function addBusiness(companyName) {
+  const business = makeBusiness(companyName)
+  saveBusinesses([...getBusinesses(), business])
+  setActiveBusinessId(business.id)
+  return business
+}
+
+/** Copy a business's whole setup under a new name. */
+export function duplicateBusiness(id, companyName) {
+  const source = getBusiness(id)
+  const copy = normalizeBusiness({
+    ...JSON.parse(JSON.stringify(source)),
+    id: newId('biz'),
+    companyName: companyName || `${source.companyName} (copy)`,
+  })
+  saveBusinesses([...getBusinesses(), copy])
+  setActiveBusinessId(copy.id)
+  return copy
+}
+
+export function updateBusiness(id, patch) {
+  const list = getBusinesses().map((b) => (b.id === id ? normalizeBusiness({ ...b, ...patch }) : b))
+  saveBusinesses(list)
+  return list.find((b) => b.id === id)
+}
+
+export function deleteBusiness(id) {
+  const list = getBusinesses().filter((b) => b.id !== id)
+  if (list.length === 0) list.push(makeBusiness())
+  saveBusinesses(list)
+  if (getActiveBusinessId() === id || !list.some((b) => b.id === readJSON(ACTIVE_BUSINESS_KEY, null))) {
+    setActiveBusinessId(list[0].id)
+  }
+  return list
+}
+
+/** Update one default category's overrides for a business. */
+export function updateDefaultOverride(businessId, categoryId, patch) {
+  const business = getBusiness(businessId)
+  const current = business.defaultOverrides[categoryId] || {}
+  const next = { ...current, ...patch }
+  Object.keys(next).forEach((k) => {
+    if (next[k] === undefined || next[k] === '' || (Array.isArray(next[k]) && next[k].length === 0)) delete next[k]
+  })
+  return updateBusiness(businessId, {
+    defaultOverrides: { ...business.defaultOverrides, [categoryId]: next },
+  })
+}
+
+/** Business details used in replies (kept for compatibility). */
+export function getSettings(businessId) {
+  const { companyName, websiteUrl, faqLink, emergencyContacts, id } = getBusiness(businessId)
+  return { id, companyName, websiteUrl, faqLink, emergencyContacts }
+}
+
+export function saveSettings(settings, businessId = getActiveBusinessId()) {
+  updateBusiness(businessId, settings)
 }
 
 /** Turn a text box of keywords (comma or newline separated) into a clean list. */
@@ -496,33 +612,46 @@ export function parseKeywordList(text) {
   )]
 }
 
-export const slugify = (text) =>
-  String(text || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'category'
-
-/** Placeholder help link for a category. */
-export function getCategoryLink(category, settings = getSettings(), overrides = getLinkOverrides()) {
+/** Help link for a category: its own link if set, otherwise a placeholder on the business website. */
+export function getCategoryLink(category, business = getActiveBusiness()) {
   if (!category) return null
-  if (overrides[category.id]) return overrides[category.id]
   if (category.link) return category.link
-  const base = (settings.websiteUrl || DEFAULT_SETTINGS.websiteUrl).replace(/\/+$/, '')
+  const base = (business.websiteUrl || DEFAULT_SETTINGS.websiteUrl).replace(/\/+$/, '')
   return `${base}/help/${category.linkSlug || slugify(category.name)}`
 }
 
+/** A business's version of one default category (overrides applied). */
+export function resolveDefaultCategory(category, business) {
+  const o = business.defaultOverrides[category.id] || {}
+  const removed = new Set(o.removedKeywords || [])
+  return {
+    ...category,
+    priority: o.priority || category.priority,
+    action: o.action || category.action,
+    replyLine: o.replyLine || category.replyLine,
+    link: o.link || '',
+    enabled: o.enabled !== false,
+    builtInKeywords: category.keywords,
+    addedKeywords: o.addedKeywords || [],
+    removedKeywords: o.removedKeywords || [],
+    keywords: [...new Set([...category.keywords.filter((k) => !removed.has(k)), ...(o.addedKeywords || [])])],
+  }
+}
+
+/** Every default category for a business, including disabled ones (for the editor). */
+export function getDefaultCategoriesFor(businessId) {
+  const business = getBusiness(businessId)
+  return DEFAULT_CATEGORIES.map((c) => resolveDefaultCategory(c, business))
+}
+
 /**
- * All active categories: defaults (with any business-added keywords) followed
- * by custom categories.
+ * The categories a business uses: its enabled default categories followed by
+ * its custom categories.
  */
-export function getAllCategories() {
-  const additions = getKeywordAdditions()
-  const defaults = DEFAULT_CATEGORIES.map((c) => ({
-    ...c,
-    keywords: [...new Set([...c.keywords, ...(additions[c.id] || [])])],
-    addedKeywords: additions[c.id] || [],
-  }))
-  const custom = getCustomCategories().map((c) => ({
+export function getAllCategories(businessId) {
+  const business = getBusiness(businessId)
+  const defaults = DEFAULT_CATEGORIES.map((c) => resolveDefaultCategory(c, business)).filter((c) => c.enabled)
+  const custom = (business.customCategories || []).map((c) => ({
     priority: 'Medium',
     description: '',
     action: 'Review the message and follow up with the customer.',

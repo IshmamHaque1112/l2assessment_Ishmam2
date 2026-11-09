@@ -9,13 +9,18 @@ function DashboardPage() {
   })
   const [categoryData, setCategoryData] = useState([])
   const [urgencyData, setUrgencyData] = useState({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+  const [businessFilter, setBusinessFilter] = useState('all')
+  const [businessOptions, setBusinessOptions] = useState([])
 
   useEffect(() => {
-    loadDashboardData()
-  }, [])
+    loadDashboardData(businessFilter)
+  }, [businessFilter])
 
-  const loadDashboardData = () => {
-    const history = JSON.parse(localStorage.getItem('triageHistory') || '[]')
+  const loadDashboardData = (selected) => {
+    const allHistory = JSON.parse(localStorage.getItem('triageHistory') || '[]')
+    const businessKey = (item) => item.businessId || item.companyName || 'unknown'
+    setBusinessOptions([...new Map(allHistory.map(item => [businessKey(item), item.companyName || 'Unknown business'])).entries()])
+    const history = selected === 'all' ? allHistory : allHistory.filter(item => businessKey(item) === selected)
     const today = new Date().toDateString()
     const todayMessages = history.filter(item => 
       new Date(item.timestamp).toDateString() === today
@@ -51,9 +56,23 @@ function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Overview of message triage analytics</p>
+        <div className="mb-6 flex items-end justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+            <p className="text-gray-600">Overview of message triage analytics</p>
+          </div>
+          {businessOptions.length > 1 && (
+            <select
+              value={businessFilter}
+              onChange={(e) => setBusinessFilter(e.target.value)}
+              className="border border-gray-300 rounded-lg p-2 text-sm bg-white"
+            >
+              <option value="all">All businesses</option>
+              {businessOptions.map(([key, name]) => (
+                <option key={key} value={key}>{name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Stats Cards */}

@@ -65,14 +65,14 @@ function Navigation() {
               Dashboard
             </Link>
             <Link
-              to="/settings"
+              to="/businesses"
               className={`px-4 py-2 rounded ${
-                isActive('/settings') 
+                isActive('/businesses') 
                   ? 'bg-blue-700 font-semibold' 
                   : 'hover:bg-blue-500'
               }`}
             >
-              Settings
+              Businesses
             </Link>
           </div>
         </div>

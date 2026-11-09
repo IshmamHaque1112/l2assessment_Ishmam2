@@ -3,7 +3,14 @@ import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { analyzeMessage } from '../utils/llmHelper'
 import { selectContacts } from '../utils/classifier'
-import { getAllCategories, getSettings, saveSettings, UNCATEGORIZED } from '../utils/categories'
+import {
+  getAllCategories,
+  getActiveBusinessId,
+  getBusinesses,
+  getSettings,
+  setActiveBusinessId,
+  UNCATEGORIZED,
+} from '../utils/categories'
 import { getRecommendedAction, buildSuggestedReply, getReplyLinks, shouldEscalate } from '../utils/templates'
 import { urgencyBadgeClass } from '../utils/ui'
 
@@ -23,7 +30,8 @@ function Linkified({ text }) {
 
 function AnalyzePage() {
   const [message, setMessage] = useState('')
-  const [companyName, setCompanyName] = useState(() => getSettings().companyName)
+  const [businesses] = useState(getBusinesses)
+  const [businessId, setBusinessId] = useState(getActiveBusinessId)
   const [customerName, setCustomerName] = useState('')
   const [results, setResults] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -39,9 +47,13 @@ function AnalyzePage() {
     }
   }, [])
 
-  const handleCompanyChange = (value) => {
-    setCompanyName(value)
-    saveSettings({ ...getSettings(), companyName: value })
+  const business = businesses.find((b) => b.id === businessId) || businesses[0]
+  const categoryCount = getAllCategories(business.id).length
+
+  const handleBusinessChange = (id) => {
+    setBusinessId(id)
+    setActiveBusinessId(id)
+    setResults(null)
   }
 
   const handleAnalyze = async () => {
@@ -54,10 +66,12 @@ function AnalyzePage() {
     setResults(null)
 
     try {
-      const settings = getSettings()
+      setActiveBusinessId(business.id)
+      const settings = getSettings(business.id)
+      const companyName = settings.companyName
       const analysis = await analyzeMessage(message)
 
-      const nameToId = Object.fromEntries(getAllCategories().map((c) => [c.name, c.id]))
+      const nameToId = Object.fromEntries(getAllCategories(business.id).map((c) => [c.name, c.id]))
       const categoryIds = [analysis.category, ...analysis.secondaryCategories]
         .map((n) => nameToId[n])
         .filter(Boolean)
@@ -73,7 +87,8 @@ function AnalyzePage() {
 
       const analysisResult = {
         message,
-        companyName: companyName || settings.companyName,
+        businessId: business.id,
+        companyName,
         customerName,
         category: analysis.category,
         secondaryCategories: analysis.secondaryCategories,
@@ -140,16 +155,26 @@ function AnalyzePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Company Receiving the Message
+                Business Receiving the Message
               </label>
-              <input
-                type="text"
-                value={companyName}
-                onChange={(e) => handleCompanyChange(e.target.value)}
-                placeholder="e.g., Fresh Foods Market"
-                className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              <select
+                value={business.id}
+                onChange={(e) => handleBusinessChange(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={isLoading}
-              />
+              >
+                {businesses.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.companyName || 'Untitled business'}
+                  </option>
+                ))}
+              </select>
+              <div className="text-xs text-gray-500 mt-1">
+                Uses {categoryCount} categories ·{' '}
+                <Link to="/businesses" className="text-blue-600 hover:underline">
+                  Add or edit businesses
+                </Link>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -178,8 +203,8 @@ function AnalyzePage() {
             />
             <div className="flex justify-between text-sm text-gray-500 mt-1">
               <span>{message.length} characters</span>
-              <Link to="/settings" className="text-blue-600 hover:underline">
-                Manage categories &amp; keywords →
+              <Link to="/businesses" className="text-blue-600 hover:underline">
+                Manage {business.companyName}'s categories &amp; keywords →
               </Link>
             </div>
             {error && <div className="text-sm text-red-600 mt-2">{error}</div>}
